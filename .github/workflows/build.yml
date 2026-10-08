@@ -1,0 +1,62 @@
+name: Construir APK do Metralha
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o projeto
+        uses: actions/checkout@v4
+
+      - name: Descompactar metralha.zip
+        run: |
+          if [ -f metralha.zip ]; then
+            unzip -o -q metralha.zip -d .
+          fi
+          test -f settings.gradle || { echo "::error::Nao achei settings.gradle"; exit 1; }
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Baixar modelo de voz em portugues
+        run: |
+          rm -rf app/src/main/assets/model-pt
+          mkdir -p app/src/main/assets
+          curl -fL --retry 3 -o model.zip https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip
+          unzip -q model.zip -d model_tmp
+          mv model_tmp/vosk-model-small-pt-0.3 app/src/main/assets/model-pt
+          echo "${{ github.run_number }}-$(date +%s)" > app/src/main/assets/model-pt/uuid
+
+      - name: Compilar APK
+        run: gradle assembleDebug --stacktrace --no-daemon
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: metralha-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publicar APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Metralha build ${{ github.run_number }}
+          body: Baixe o app-debug.apk abaixo e instale no Android.
+          files: app/build/outputs/apk/debug/app-debug.apk
